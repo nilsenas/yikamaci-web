@@ -55,7 +55,7 @@
             font-weight: bold;
             margin-right: 5px;
         }
-        .loading { text-align: center; color: #666; }
+        .loading { text-align: center; color: #666; padding: 20px; }
     </style>
 </head>
 <body>
@@ -67,7 +67,7 @@
     <button onclick="konumEkle()" class="btn-green">📍 Mevcut Konumu Ekle</button>
 
     <div class="search-box">
-        <input type="text" id="ilInput" placeholder="İl ara...">
+        <input type="text" id="ilInput" placeholder="İl ara (Örn: Ankara)">
         <button onclick="filtrele()" class="btn-blue">Ara</button>
         <button onclick="temizle()" class="btn-gray">Tümü</button>
     </div>
@@ -78,7 +78,7 @@
         // --- YÖNETİCİ ŞİFRESİ ---
         const YONETICI_SIFRESI = "370634";
 
-        // Haritayı Başlat
+        // 1. Haritayı Başlat (Türkiye Merkezli - BOŞ)
         var map = L.map('map').setView([39.0, 35.0], 6);
         
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -89,7 +89,9 @@
         const listeDiv = document.getElementById('liste');
         const ilInput = document.getElementById('ilInput');
 
-        verileriGetir();
+        // DİKKAT: Sayfa açılınca verileriGetir() çağırmıyoruz!
+        // Onun yerine kullanıcıya mesaj veriyoruz.
+        listeDiv.innerHTML = '<div class="loading">🔍 Haritada görmek için bir il yazıp <b>"Ara"</b> butonuna basın.<br>veya "Tümü" diyerek hepsini listeleyin.</div>';
 
         function verileriGetir(arananIl = '') {
             listeDiv.innerHTML = '<div class="loading">Yükleniyor...</div>';
@@ -107,7 +109,7 @@
                     listeDiv.innerHTML = '';
 
                     if (!veriler.data || veriler.data.length === 0) {
-                        listeDiv.innerHTML = '<div style="text-align:center; padding:20px;">Kayıt bulunamadı.</div>';
+                        listeDiv.innerHTML = '<div style="text-align:center; padding:20px;">Bu kriterde kayıt bulunamadı.</div>';
                         return;
                     }
 
@@ -154,6 +156,7 @@
                 
                 // Haritada göster
                 map.setView([lat, lon], 15);
+                // Geçici işaretçi (veritabanından gelene kadar)
                 L.marker([lat, lon]).addTo(map).bindPopup("Yeni Konum").openPopup();
 
                 const ad = prompt("İstasyon Adı:", "Yeni Yıkama");
@@ -175,7 +178,8 @@
                     body: JSON.stringify({ ad, lat, lon, il, ilce })
                 }).then(() => {
                     alert("Eklendi!");
-                    verileriGetir();
+                    // Ekleyince listeyi yenile ki kullanıcı görsün
+                    verileriGetir(); 
                 });
             });
         }
@@ -187,15 +191,27 @@
             if (sifre === YONETICI_SIFRESI) {
                 fetch('/api/sil/' + id, { method: 'DELETE' }).then(() => {
                     alert("Kayıt başarıyla silindi.");
-                    verileriGetir();
+                    // Silince listeyi yenile
+                    verileriGetir(ilInput.value.trim()); 
                 });
             } else if (sifre !== null) {
                 alert("Hatalı şifre! İşlem iptal edildi.");
             }
         }
 
-        function filtrele() { verileriGetir(ilInput.value.trim()); }
-        function temizle() { ilInput.value = ''; verileriGetir(); }
+        function filtrele() { 
+            const deger = ilInput.value.trim();
+            if(!deger) {
+                alert("Lütfen bir il ismi giriniz.");
+                return;
+            }
+            verileriGetir(deger); 
+        }
+
+        function temizle() { 
+            ilInput.value = ''; 
+            verileriGetir(); 
+        }
 
         if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
     </script>
