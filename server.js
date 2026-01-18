@@ -1,77 +1,89 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose(); 
+const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const path = require('path');
+const axios = require('axios'); // Konumdan il bulmak için
 
 const app = express();
-const port = 3000;
+const PORT = 3000;
 
 app.use(cors());
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+app.use(express.static('public')); 
+app.use(express.static(__dirname)); // Ana dizindeki dosyaları sun
 
-// --- VERİTABANI OLUŞTURMA (SQLITE) ---
-// Bu kod klasöründe otomatik olarak 'arac_yikama.db' dosyası oluşturacak.
+// Veritabanı Bağlantısı
 const db = new sqlite3.Database('./arac_yikama.db', (err) => {
-  if (err) console.error("Veritabanı hatası:", err.message);
-  else console.log('✅ Veritabanı dosyasına (SQLite) bağlandı.');
+    if (err) console.error(err.message);
+    else console.log('✅ Veritabanı dosyasına (SQLite) bağlandı.');
 });
 
-// Tabloyu Oluştur
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS istasyonlar (
+// Tabloyu Oluştur (Yoksa)
+db.run(`CREATE TABLE IF NOT EXISTS istasyonlar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ad TEXT, il TEXT, ilce TEXT, lat REAL, lon REAL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-});
+    ad TEXT,
+    lat REAL,
+    lon REAL,
+    il TEXT,
+    ilce TEXT
+)`);
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-// İstasyonları getir (Filtreli veya Tümü)
+// 1. LİSTELEME VE ARAMA (GET)
 app.get('/api/istasyonlar', (req, res) => {
-    let sql = "SELECT * FROM istasyonlar";
+    let sql = "SELECT * FROM istasyonlar ORDER BY id DESC"; // En yeniler üstte
     let params = [];
 
-    // Eğer arama kutusundan 'il' bilgisi geldiyse sorguyu değiştir
     if (req.query.il) {
-        sql += " WHERE il LIKE ?";
-        params.push('%' + req.query.il + '%'); // İçinde geçenleri bulur
+        sql = "SELECT * FROM istasyonlar WHERE il LIKE ? ORDER BY id DESC";
+        params.push('%' + req.query.il + '%');
     }
 
     db.all(sql, params, (err, rows) => {
-        if (err) {
-            res.status(400).json({ "error": err.message });
-            return;
-        }
-        res.json({
-            "message": "success",
-            "data": rows
-        });
+        if (err) return res.status(400).json({ error: err.message });
+        res.json({ message: "success", data: rows });
     });
 });
 
-app.post('/api/istasyonlar', (req, res) => {
-  const { ad, il, ilce, lat, lon } = req.body;
-  const sql = `INSERT INTO istasyonlar (ad, il, ilce, lat, lon) VALUES (?, ?, ?, ?, ?)`;
-  db.run(sql, [ad, il, ilce, lat, lon], function(err) {
-    if (err) return res.status(500).json({error: err.message});
-    res.json({ id: this.lastID, ad, il, ilce, lat, lon });
-  });
+// 2. YENİ EKLEME (POST) - OTOMATİK İL BULMA DAHİL
+app.post('/api/ekle', async (req, res) => {
+    const { ad, lat, lon } = req.body;
+    
+    // OpenStreetMap'ten İl/İlçe Bul
+    let il = "Bilinmiyor";
+    let ilce = "";
+
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+        const response = await axios.get(url);
+        if(response.data && response.data.address) {
+            il = response.data.address.province || response.data.address.city || "Bilinmiyor";
+            ilce = response.data.address.town || response.data.address.district || "";
+        }
+    } catch (error) {
+        console.log("Konum bulunamadı:", error.message);
+    }
+
+    const sql = "INSERT INTO istasyonlar (ad, lat, lon, il, ilce) VALUES (?,?,?,?,?)";
+    db.run(sql, [ad, lat, lon, il, ilce], function(err) {
+        if (err) return res.status(400).json({ error: err.message });
+        res.json({ message: "Kayıt başarıyla eklendi!", id: this.lastID });
+    });
 });
 
-app.delete('/api/istasyonlar/:id', (req, res) => {
-  if (req.body.sifre !== "370634") return res.status(403).json({ message: "Hatalı şifre" });
-  db.run(`DELETE FROM istasyonlar WHERE id = ?`, [req.params.id], function(err) {
-    if (err) return res.status(500).send('Hata');
-    res.json({ message: "Silindi" });
-  });
+// 3. SİLME (DELETE)
+app.delete('/api/sil/:id', (req, res) => {
+    const sql = "DELETE FROM istasyonlar WHERE id = ?";
+    db.run(sql, req.params.id, function(err) {
+        if (err) return res.status(400).json({ error: err.message });
+        res.json({ message: "Silindi", rows: this.changes });
+    });
 });
 
-app.listen(port, () => {
-  console.log(`-----------------------------------------------`);
-  console.log(`✅ Sunucu Hazır: http://localhost:${port}`);
-  console.log(`📁 Veriler 'arac_yikama.db' dosyasına yazılacak.`);
-  console.log(`-----------------------------------------------`);
+// Ana Sayfayı Aç
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
 });

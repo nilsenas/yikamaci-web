@@ -16,6 +16,7 @@
         }
         h1 { text-align: center; color: #333; }
         
+        /* Arama Kutusu Stilleri */
         .search-box {
             display: flex;
             gap: 10px;
@@ -28,25 +29,29 @@
             border-radius: 8px;
             font-size: 16px;
         }
+        
+        /* Buton Stilleri */
         button {
-            padding: 12px 20px;
+            padding: 12px 15px;
             border: none;
             border-radius: 8px;
-            background-color: #007bff;
-            color: white;
-            font-size: 16px;
+            font-size: 14px;
             cursor: pointer;
+            font-weight: bold;
         }
-        button.clear-btn {
-            background-color: #6c757d;
-        }
+        .btn-blue { background-color: #007bff; color: white; } /* Mavi Buton */
+        .btn-gray { background-color: #6c757d; color: white; } /* Gri Buton */
+        .btn-green { background-color: #28a745; color: white; width: 100%; margin-bottom: 20px; font-size: 16px; } /* Yeşil Ekle Butonu */
+        .btn-red { background-color: #dc3545; color: white; margin-left: 10px; } /* Kırmızı Sil Butonu */
         
+        /* Kart Stilleri */
         .card {
             background: white;
             padding: 15px;
             margin-bottom: 15px;
             border-radius: 12px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: relative;
         }
         .card h3 { margin: 0 0 10px 0; color: #007bff; }
         .card p { margin: 5px 0; color: #555; }
@@ -55,22 +60,26 @@
             display: inline-block;
             margin-top: 10px;
             text-decoration: none;
-            background-color: #28a745;
+            background-color: #17a2b8;
             color: white;
             padding: 8px 15px;
             border-radius: 5px;
             font-size: 14px;
         }
+        
+        .loading { text-align: center; color: #666; margin-top: 20px; }
     </style>
 </head>
 <body>
 
     <h1>🚗 Yıkama Bulucu</h1>
 
+    <button onclick="konumEkle()" class="btn-green">📍 Mevcut Konumu Ekle</button>
+
     <div class="search-box">
         <input type="text" id="ilInput" placeholder="Hangi il? (Örn: İstanbul)">
-        <button onclick="filtrele()">Ara</button>
-        <button onclick="temizle()" class="clear-btn">Tümünü Göster</button>
+        <button onclick="filtrele()" class="btn-blue">Ara</button>
+        <button onclick="temizle()" class="btn-gray">Tümü</button>
     </div>
 
     <div id="liste">
@@ -80,14 +89,13 @@
         const listeDiv = document.getElementById('liste');
         const ilInput = document.getElementById('ilInput');
 
-        // Sayfa ilk açıldığında tüm verileri getir
+        // Sayfa açılınca verileri çek
         verileriGetir();
 
-        // 1. Verileri Sunucudan Çeken Fonksiyon
+        // ---- FONKSİYON 1: Verileri Listele ----
         function verileriGetir(arananIl = '') {
-            listeDiv.innerHTML = '<div style="text-align:center">Yükleniyor...</div>';
+            listeDiv.innerHTML = '<div class="loading">Yükleniyor...</div>';
             
-            // Eğer il yazılmışsa sunucuya ?il=Ankara gibi soracağız
             let url = '/api/istasyonlar';
             if (arananIl) {
                 url += '?il=' + arananIl;
@@ -96,51 +104,86 @@
             fetch(url)
                 .then(response => response.json())
                 .then(veriler => {
-                    listeDiv.innerHTML = ''; // Yükleniyor yazısını temizle
+                    listeDiv.innerHTML = ''; 
 
-                    // Eğer hiç sonuç yoksa
                     if (!veriler.data || veriler.data.length === 0) {
-                        listeDiv.innerHTML = '<div class="card">Aradığınız kriterde istasyon bulunamadı.</div>';
+                        listeDiv.innerHTML = '<div class="card">Kayıt bulunamadı.</div>';
                         return;
                     }
 
-                    // Sonuçları ekrana bas
                     veriler.data.forEach(istasyon => {
-                        // Google Haritalar linki oluştur
-                        const haritaLink = `https://www.google.com/maps/search/?api=1&query=${istasyon.lat},${istasyon.lon}`;
+                        const haritaLink = `https://www.google.com/maps?q=${istasyon.lat},${istasyon.lon}`;
                         
+                        // Kartın HTML'i (Sil butonu eklendi)
                         const kart = `
                             <div class="card">
                                 <h3>${istasyon.ad}</h3>
-                                <p>📍 ${istasyon.ilce || ''} / ${istasyon.il}</p>
-                                <a href="${haritaLink}" target="_blank" class="map-btn">Haritada Git 🗺️</a>
+                                <p>📍 ${istasyon.ilce || '-'} / ${istasyon.il}</p>
+                                <div style="margin-top:10px;">
+                                    <a href="${haritaLink}" target="_blank" class="map-btn">Harita 🗺️</a>
+                                    <button onclick="sil(${istasyon.id})" class="btn-red">Sil 🗑️</button>
+                                </div>
                             </div>
                         `;
                         listeDiv.innerHTML += kart;
                     });
-                })
-                .catch(error => {
-                    listeDiv.innerHTML = 'Bir hata oluştu. Lütfen sayfayı yenileyin.';
-                    console.error('Hata:', error);
                 });
         }
 
-        // 2. Ara Butonuna Basınca Çalışan Fonksiyon
+        // ---- FONKSİYON 2: Yeni Konum Ekle ----
+        function konumEkle() {
+            if (!confirm("Bulunduğunuz konumu kaydetmek istiyor musunuz?")) return;
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const veri = {
+                        ad: prompt("İstasyon Adı Giriniz:", "Yeni Yıkama"),
+                        lat: position.coords.latitude,
+                        lon: position.coords.longitude
+                    };
+
+                    if(!veri.ad) return; // İsim girmezse iptal et
+
+                    fetch('/api/ekle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(veri)
+                    })
+                    .then(response => response.json())
+                    .then(sonuc => {
+                        alert(sonuc.message);
+                        verileriGetir(); // Listeyi yenile
+                    });
+                });
+            } else {
+                alert("Tarayıcınız konum servisini desteklemiyor.");
+            }
+        }
+
+        // ---- FONKSİYON 3: Kayıt Sil ----
+        function sil(id) {
+            if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
+
+            fetch('/api/sil/' + id, { method: 'DELETE' })
+                .then(response => response.json())
+                .then(sonuc => {
+                    verileriGetir(); // Silince listeyi yenile
+                });
+        }
+
+        // ---- FONKSİYON 4: Arama & Temizleme ----
         function filtrele() {
-            const girilenIl = ilInput.value.trim();
-            verileriGetir(girilenIl); // Sadece bu ili getir
+            verileriGetir(ilInput.value.trim());
         }
 
-        // 3. "Tümünü Göster" Butonuna Basınca Çalışan Fonksiyon
         function temizle() {
-            ilInput.value = ''; // Kutuyu boşalt
-            verileriGetir(); // Parametre vermeden çağırınca hepsini getirir
+            ilInput.value = '';
+            verileriGetir();
         }
-
-        // 4. PWA Servis İşçisi (Uygulama olarak çalışması için)
+        
+        // PWA
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-            .then(() => console.log('Uygulama yükleyicisi hazır'));
+            navigator.serviceWorker.register('sw.js');
         }
     </script>
 
