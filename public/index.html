@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jetonlu Araç Yıkama</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+<link rel="manifest" href="manifest.json">
+/* --- TASARIM --- */
+body{font-family:"Segoe UI",Arial,sans-serif;margin:0;background:#eef2f5}
+header{background:#0078d7;color:#fff;text-align:center;padding:15px}
+main{max-width:800px;margin:20px auto;padding:0 15px}
+#map{height:400px;border-radius:8px;margin-bottom:15px; border:2px solid #ddd;}
+section{background:#fff;padding:15px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,.1);margin-bottom:20px}
+
+/* Form Elemanları */
+input,button{padding:12px;margin:5px 0;border-radius:6px;border:1px solid #ccc; width: 100%; box-sizing: border-box; font-size:14px;}
+button{background:#0078d7;color:#fff;border:none;cursor:pointer; font-weight: bold; transition:0.3s;}
+button:hover{background:#005fa3}
+button:disabled { background: #ccc; cursor: not-allowed; }
+button.red{background:#d9534f; width: auto; padding: 5px 15px; font-size: 12px;}
+
+/* Liste */
+.list-group{list-style:none;padding:0; max-height: 300px; overflow-y: auto;}
+.list-group li{background:#f9f9f9;margin:5px 0;padding:15px;border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items: center;}
+
+/* Gizli Elemanlar */
+.hidden{display:none;}
+
+/* Adres Bilgi Kutusu */
+#adresBilgisi {
+    padding: 10px;
+    background: #e8f0fe;
+    border: 1px solid #b6d4fe;
+    border-radius: 5px;
+    color: #004085;
+    margin-top: 5px;
+    display: none; /* Başlangıçta gizli */
+    font-size: 13px;
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h2>💦 Jetonlu Yıkama Haritası</h2>
+</header>
+
+<main>
+
+<div id="map"></div>
+
+<section>
+  <h3>🔍 Konum Ara</h3>
+  <div style="display:flex; gap:5px;">
+    <input id="aramaIl" placeholder="İl (ör: Ankara)">
+    <input id="aramaIlce" placeholder="İlçe (İsteğe bağlı)">
+  </div>
+  <button id="araBtn">Ara</button>
+  <button id="tumunuGosterBtn" style="background:#555;">Tümünü Göster</button>
+</section>
+
+<section>
+  <h3>➕ Yeni İstasyon Ekle</h3>
+  
+  <input id="ad" placeholder="İstasyon Adı (Ör: Özen Yıkama)" required>
+  
+  <button id="konumBulBtn" style="background:#28a745;">📍 Konumumu Bul ve Adresi Getir</button>
+  
+  <div id="adresBilgisi"></div>
+
+  <button id="kaydetBtn" disabled style="margin-top:10px;">💾 Kaydet</button>
+
+  <input type="hidden" id="il">
+  <input type="hidden" id="ilce">
+  <input type="hidden" id="lat">
+  <input type="hidden" id="lon">
+</section>
+
+<section>
+  <h3>📋 Sonuçlar</h3>
+  <ul id="istasyonList" class="list-group">
+      <li style="text-align:center; color:#777;">Listeyi görmek için arama yapın.</li>
+  </ul>
+  
+  <div style="margin-top:15px; border-top:1px dashed #ccc; padding-top:10px;">
+      <small style="color:#999;">⚠️ Yönetici Silme İşlemi</small>
+      <input type="password" id="silmeSifre" placeholder="Yönetici Şifresi">
+  </div>
+</section>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// --- AYARLAR ---
+const API_URL = "/api/istasyonlar"; 
+let tumIstasyonlar = []; 
+
+// --- HARİTA ---
+const map = L.map("map").setView([39.92, 32.85], 6);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+let markers = L.layerGroup().addTo(map);
+
+// --- TÜRKÇE KARAKTER DÜZELTME ---
+function trKucult(metin) {
+    if(!metin) return "";
+    return metin.toString()
+        .replace(/İ/g, "i").replace(/I/g, "ı")
+        .replace(/Ğ/g, "ğ").replace(/Ü/g, "ü")
+        .replace(/Ş/g, "ş").replace(/Ö/g, "ö")
+        .replace(/Ç/g, "ç")
+        .toLowerCase().trim();
+}
+
+// --- 1. OTOMATİK ADRES BULMA (TERSİNE KODLAMA) ---
+const konumBtn = document.getElementById("konumBulBtn");
+const adresKutusu = document.getElementById("adresBilgisi");
+const kaydetBtn = document.getElementById("kaydetBtn");
+
+konumBtn.onclick = () => {
+    if(!navigator.geolocation) return alert("Cihazınızda GPS yok.");
+    
+    konumBtn.innerText = "⏳ Konum ve Adres Alınıyor...";
+    konumBtn.disabled = true; // Tekrar basılmasın
+
+    navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+
+            // Koordinatları gizli kutulara yaz
+            document.getElementById("lat").value = lat;
+            document.getElementById("lon").value = lon;
+
+            try {
+                // OpenStreetMap Servisine Soruyoruz: Bu koordinat neresi?
+                // (Nominatim API Ücretsizdir)
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                // Adres parçalarını al (API bazen 'province' bazen 'city' döndürür)
+                const adres = data.address;
+                const bulunanIl = adres.province || adres.state || adres.city || "Bilinmiyor";
+                const bulunanIlce = adres.town || adres.district || adres.county || adres.suburb || "Merkez";
+
+                // Gizli kutulara yaz
+                document.getElementById("il").value = bulunanIl;
+                document.getElementById("ilce").value = bulunanIlce;
+
+                // Kullanıcıya göster
+                adresKutusu.style.display = "block";
+                adresKutusu.innerHTML = `✅ <b>Adres Bulundu:</b> ${bulunanIl} / ${bulunanIlce}<br><small>(Koordinat: ${lat.toFixed(4)}, ${lon.toFixed(4)})</small>`;
+                
+                // Kaydet butonunu aç
+                konumBtn.innerText = "📍 Konum Güncellendi";
+                konumBtn.style.background = "#17a2b8";
+                konumBtn.disabled = false;
+                kaydetBtn.disabled = false;
+
+            } catch (error) {
+                console.error(error);
+                alert("Konum alındı ama adres ismi bulunamadı. İnternet bağlantınızı kontrol edin.");
+                // Adres bulunamazsa bile koordinat var, kaydetmeye izin verelim
+                document.getElementById("il").value = "Konum";
+                document.getElementById("ilce").value = "Bilinmiyor";
+                kaydetBtn.disabled = false;
+            }
+        },
+        (err) => {
+            alert("Konum alınamadı. GPS açık mı?");
+            konumBtn.innerText = "📍 Konumumu Bul ve Adresi Getir";
+            konumBtn.disabled = false;
+        }
+    );
+};
+
+// --- 2. KAYDETME ---
+kaydetBtn.onclick = async () => {
+    const ad = document.getElementById("ad").value;
+    const il = document.getElementById("il").value;
+    const ilce = document.getElementById("ilce").value;
+    const lat = document.getElementById("lat").value;
+    const lon = document.getElementById("lon").value;
+
+    if(!ad) return alert("Lütfen İstasyon Adını giriniz.");
+
+    const yeniVeri = {
+        ad: ad,
+        il: il,
+        ilce: ilce,
+        lat: parseFloat(lat),
+        lon: parseFloat(lon)
+    };
+
+    try {
+        const res = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(yeniVeri)
+        });
+
+        if(res.ok) {
+            alert("✅ İstasyon başarıyla kaydedildi!");
+            // Formu sıfırla
+            document.getElementById("ad").value = "";
+            adresKutusu.style.display = "none";
+            kaydetBtn.disabled = true;
+            konumBtn.innerText = "📍 Konumumu Bul ve Adresi Getir";
+            konumBtn.style.background = "#28a745";
+            verileriHazirla(); // Listeyi güncelle
+        } else {
+            alert("Kayıt hatası.");
+        }
+    } catch (err) { alert("Sunucu hatası."); }
+};
+
+// --- 3. VERİLERİ ÇEK ---
+async function verileriHazirla() {
+    try {
+        const res = await fetch(API_URL);
+        tumIstasyonlar = await res.json();
+    } catch (err) { console.error(err); }
+}
+
+// --- 4. LİSTELEME ---
+function listeyiGuncelle(veri) {
+    markers.clearLayers();
+    const liste = document.getElementById("istasyonList");
+    liste.innerHTML = "";
+
+    if(veri.length === 0) {
+        liste.innerHTML = "<li style='text-align:center'>Sonuç bulunamadı.</li>";
+        return;
+    }
+
+    veri.forEach(item => {
+        L.marker([item.lat, item.lon]).addTo(markers)
+         .bindPopup(`<b>${item.ad}</b><br>${item.il} / ${item.ilce}`);
+
+        liste.innerHTML += `
+            <li>
+                <span onclick="haritayaGit(${item.lat}, ${item.lon})" style="cursor:pointer; color:#0078d7; font-weight:bold;">
+                    ${item.ad} <small style="color:#666">(${item.il}/${item.ilce})</small>
+                </span>
+                <button class="red" onclick="sil(${item.id})">Sil</button>
+            </li>
+        `;
+    });
+    
+    // İlk sonuca odaklan
+    if(veri.length > 0) map.setView([veri[0].lat, veri[0].lon], 9);
+}
+
+window.haritayaGit = (lat, lon) => {
+    map.setView([lat, lon], 14);
+};
+
+// --- 5. ARAMA ---
+document.getElementById("araBtn").onclick = () => {
+    if(tumIstasyonlar.length === 0) verileriHazirla();
+    
+    const girilenIl = trKucult(document.getElementById("aramaIl").value);
+    const girilenIlce = trKucult(document.getElementById("aramaIlce").value);
+
+    if (!girilenIl) return alert("Lütfen en az bir İl yazın.");
+
+    const sonuclar = tumIstasyonlar.filter(item => {
+        const veriIl = trKucult(item.il);
+        const veriIlce = trKucult(item.ilce);
+        
+        if (girilenIlce === "") return veriIl.includes(girilenIl);
+        return veriIl.includes(girilenIl) && veriIlce.includes(girilenIlce);
+    });
+
+    listeyiGuncelle(sonuclar);
+};
+
+document.getElementById("tumunuGosterBtn").onclick = () => {
+    verileriHazirla().then(() => {
+         listeyiGuncelle(tumIstasyonlar);
+         map.setView([39.92, 32.85], 6);
+    });
+};
+
+// --- 6. SİLME ---
+async function sil(id) {
+    const sifre = document.getElementById("silmeSifre").value;
+    if(!sifre) return alert("Yönetici şifresi gerekli.");
+    if(!confirm("Emin misin?")) return;
+
+    try {
+        const res = await fetch(API_URL + "/" + id, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sifre: sifre })
+        });
+        if(res.ok) {
+            alert("Silindi.");
+            verileriHazirla().then(() => {
+                document.getElementById("istasyonList").innerHTML = "";
+                markers.clearLayers();
+            });
+        } else {
+            alert("Şifre Yanlış!");
+        }
+    } catch (err) { alert("Hata."); }
+}
+
+verileriHazirla();
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('Uygulama yükleyicisi hazır'));
+  }
+</script>
+</body>
+</html>
