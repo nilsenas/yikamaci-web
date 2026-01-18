@@ -10,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <style>
-        body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; background-color: #f4f4f9; }
+        body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; background-color: #f4f4f9; padding-bottom: 40px; }
         h1 { text-align: center; color: #333; margin: 10px 0; }
         
         /* HARİTA */
@@ -42,6 +42,23 @@
         .btn-red { background-color: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
         
         .loading { text-align: center; padding: 20px; color: #666; }
+
+        /* --- İMZA ALANI (FOOTER) --- */
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.6;
+            background-color: #eaeaea;
+            border-radius: 10px;
+            padding-bottom: 20px;
+        }
+        footer p { margin: 5px 0; }
+        footer b { color: #333; font-weight: 800; }
+        footer a { color: #007bff; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -72,6 +89,12 @@
     </div>
 
     <div id="liste"></div>
+
+    <footer>
+        <p>Bu uygulama <b>Kemal Rahmi ŞENER</b> tarafından geliştirilmiştir.</p>
+        <p><b>İnşaat Yüksek Mühendisi (ODTÜ)</b></p>
+        <p>İletişim: <a href="tel:+90850933164">+90 850 933 16 64</a></p>
+    </footer>
 
     <script>
         const YONETICI_SIFRESI = "370634";
@@ -165,94 +188,4 @@
 
                 let il = "Bilinmiyor", ilce = "";
                 try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-                    const data = await res.json();
-                    il = data.address.province || data.address.city || "Bilinmiyor";
-                    ilce = data.address.town || data.address.district || "";
-                } catch (e) {}
-
-                kaydet(ad, lat, lon, il, ilce);
-            });
-        }
-
-        // --- 2. ADRES İLE EKLE ---
-        function formuGoster() { document.getElementById('adresFormu').style.display = 'block'; }
-        function formuGizle() { document.getElementById('adresFormu').style.display = 'none'; }
-
-        async function adrestenKoordinatBul() {
-            const ad = document.getElementById('yeniAd').value;
-            const il = document.getElementById('yeniIl').value;
-            const ilce = document.getElementById('yeniIlce').value;
-            const mahalle = document.getElementById('yeniMahalle').value;
-
-            if (!ad || !il || !ilce) return alert("Lütfen Ad, İl ve İlçe giriniz.");
-
-            const adresSorgu = `${mahalle}, ${ilce}, ${il}, Turkey`;
-            
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(adresSorgu)}`);
-                const data = await res.json();
-
-                if (data.length > 0) {
-                    const lat = data[0].lat;
-                    const lon = data[0].lon;
-                    
-                    if(confirm(`Bulunan Konum: ${data[0].display_name}\nKaydedilsin mi?`)) {
-                        kaydet(ad, lat, lon, il, ilce);
-                        formuGizle();
-                        document.getElementById('yeniAd').value = '';
-                        document.getElementById('yeniMahalle').value = '';
-                    }
-                } else {
-                    alert("Adres bulunamadı! Lütfen kontrol edin.");
-                }
-            } catch (e) { alert("Hata oluştu."); }
-        }
-
-        function kaydet(ad, lat, lon, il, ilce) {
-            fetch('/api/ekle', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ad, lat, lon, il, ilce })
-            }).then(() => {
-                alert("Kayıt Başarılı! ✅");
-                ilInput.value = il; 
-                verileriGetir(il); 
-            });
-        }
-
-        // --- SİLME FONKSİYONU (ŞİFRELİ) ---
-        function sil(id) {
-            const sifre = prompt("Silmek için yönetici şifresini girin:");
-            
-            // Şifre Kontrolü
-            if (sifre === YONETICI_SIFRESI) {
-                fetch('/api/sil/' + id, { method: 'DELETE' }).then(() => {
-                    alert("Kayıt silindi.");
-                    verileriGetir(ilInput.value.trim());
-                });
-            } else if (sifre !== null) {
-                alert("Hatalı şifre! Silme işlemi iptal edildi.");
-            }
-        }
-
-        function filtrele() { 
-            const deger = ilInput.value.trim();
-            if(!deger) return alert("Lütfen bir il yazın.");
-            verileriGetir(deger); 
-        }
-        
-        function temizle() {
-            ilInput.value = '';
-            if(map) {
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
-                map.setView([39.0, 35.0], 6);
-            }
-            listeDiv.innerHTML = '<div class="loading">Harita temizlendi.</div>';
-        }
-
-        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-    </script>
-</body>
-</html>
+                    const res = await fetch(`
