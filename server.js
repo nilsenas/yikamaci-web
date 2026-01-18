@@ -29,11 +29,27 @@ db.serialize(() => {
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// İstasyonları getir (Filtreli veya Tümü)
 app.get('/api/istasyonlar', (req, res) => {
-  db.all("SELECT * FROM istasyonlar ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({error: err.message});
-    res.json(rows);
-  });
+    let sql = "SELECT * FROM istasyonlar";
+    let params = [];
+
+    // Eğer arama kutusundan 'il' bilgisi geldiyse sorguyu değiştir
+    if (req.query.il) {
+        sql += " WHERE il LIKE ?";
+        params.push('%' + req.query.il + '%'); // İçinde geçenleri bulur
+    }
+
+    db.all(sql, params, (err, rows) => {
+        if (err) {
+            res.status(400).json({ "error": err.message });
+            return;
+        }
+        res.json({
+            "message": "success",
+            "data": rows
+        });
+    });
 });
 
 app.post('/api/istasyonlar', (req, res) => {
