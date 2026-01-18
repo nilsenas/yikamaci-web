@@ -2,7 +2,6 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
-const axios = require('axios'); // Konumdan il bulmak için
 
 const app = express();
 const PORT = 3000;
@@ -10,7 +9,7 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public')); 
-app.use(express.static(__dirname)); // Ana dizindeki dosyaları sun
+app.use(express.static(__dirname)); 
 
 // Veritabanı Bağlantısı
 const db = new sqlite3.Database('./arac_yikama.db', (err) => {
@@ -18,7 +17,7 @@ const db = new sqlite3.Database('./arac_yikama.db', (err) => {
     else console.log('✅ Veritabanı dosyasına (SQLite) bağlandı.');
 });
 
-// Tabloyu Oluştur (Yoksa)
+// Tabloyu Oluştur
 db.run(`CREATE TABLE IF NOT EXISTS istasyonlar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad TEXT,
@@ -30,7 +29,7 @@ db.run(`CREATE TABLE IF NOT EXISTS istasyonlar (
 
 // 1. LİSTELEME VE ARAMA (GET)
 app.get('/api/istasyonlar', (req, res) => {
-    let sql = "SELECT * FROM istasyonlar ORDER BY id DESC"; // En yeniler üstte
+    let sql = "SELECT * FROM istasyonlar ORDER BY id DESC";
     let params = [];
 
     if (req.query.il) {
@@ -44,27 +43,17 @@ app.get('/api/istasyonlar', (req, res) => {
     });
 });
 
-// 2. YENİ EKLEME (POST) - OTOMATİK İL BULMA DAHİL
-app.post('/api/ekle', async (req, res) => {
-    const { ad, lat, lon } = req.body;
+// 2. YENİ EKLEME (POST) - SADE HALİ
+app.post('/api/ekle', (req, res) => {
+    // Frontend'den gelen verileri al
+    const { ad, lat, lon, il, ilce } = req.body;
     
-    // OpenStreetMap'ten İl/İlçe Bul
-    let il = "Bilinmiyor";
-    let ilce = "";
-
-    try {
-        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
-        const response = await axios.get(url);
-        if(response.data && response.data.address) {
-            il = response.data.address.province || response.data.address.city || "Bilinmiyor";
-            ilce = response.data.address.town || response.data.address.district || "";
-        }
-    } catch (error) {
-        console.log("Konum bulunamadı:", error.message);
-    }
+    // Eğer il bilgisi gelmediyse "Bilinmiyor" yaz
+    const kayitIl = il || "Bilinmiyor";
+    const kayitIlce = ilce || "";
 
     const sql = "INSERT INTO istasyonlar (ad, lat, lon, il, ilce) VALUES (?,?,?,?,?)";
-    db.run(sql, [ad, lat, lon, il, ilce], function(err) {
+    db.run(sql, [ad, lat, lon, kayitIl, kayitIlce], function(err) {
         if (err) return res.status(400).json({ error: err.message });
         res.json({ message: "Kayıt başarıyla eklendi!", id: this.lastID });
     });
@@ -79,7 +68,6 @@ app.delete('/api/sil/:id', (req, res) => {
     });
 });
 
-// Ana Sayfayı Aç
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
