@@ -37,7 +37,9 @@
         .card-info h3 { margin: 0 0 5px 0; color: #007bff; font-size: 16px; }
         .card-info p { margin: 0; color: #666; font-size: 14px; }
         .btn-route { text-decoration: none; background-color: #ffc107; color: #333; padding: 6px 10px; border-radius: 5px; font-size: 13px; font-weight: bold; margin-right: 5px; }
-        .btn-red { background-color: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; }
+        
+        /* SİL BUTONU TASARIMI */
+        .btn-red { background-color: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
         
         .loading { text-align: center; padding: 20px; color: #666; }
     </style>
@@ -77,16 +79,15 @@
         const ilInput = document.getElementById('ilInput');
         var markers = [];
 
-        // 1. HARİTA AYARLARI (Başlangıçta Sadece Türkiye)
-        var map = L.map('map').setView([39.0, 35.0], 6); // Türkiye Ortası, Uzak Bakış
+        // HARİTA AYARLARI
+        var map = L.map('map').setView([39.0, 35.0], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-        // AÇILIŞ MESAJI (Otomatik veri çekme YOK)
+        // AÇILIŞ MESAJI
         listeDiv.innerHTML = '<div class="loading">🔍 Harita boş başlatıldı.<br>Konumları görmek için bir İl yazıp <b>"Ara"</b> butonuna basın.</div>';
 
         // --- VERİ ÇEKME VE LİSTELEME ---
         function verileriGetir(arananIl = '') {
-            // Haritayı temizle
             markers.forEach(m => map.removeLayer(m));
             markers = [];
             
@@ -102,16 +103,14 @@
 
                     if (!veriler.data || veriler.data.length === 0) {
                         listeDiv.innerHTML = '<div class="loading">Bu bölgede kayıt bulunamadı.</div>';
-                        // Haritayı tekrar Türkiye geneline al
                         map.setView([39.0, 35.0], 6);
                         return;
                     }
 
                     veriler.data.forEach(istasyon => {
-                        // GOOGLE MAPS LİNKİ
                         const navLink = `https://www.google.com/maps/search/?api=1&query=${istasyon.lat},${istasyon.lon}`;
 
-                        // A. HARİTAYA PİN EKLE (Yol Tarifi Linki ile)
+                        // HARİTAYA PİN EKLE
                         if (istasyon.lat && istasyon.lon) {
                             var marker = L.marker([istasyon.lat, istasyon.lon])
                                 .addTo(map)
@@ -123,7 +122,7 @@
                             markers.push(marker);
                         }
 
-                        // B. LİSTEYE KART EKLE
+                        // LİSTEYE KART EKLE (SİL BUTONU BURADA)
                         const kart = `
                             <div class="card">
                                 <div class="card-info">
@@ -132,13 +131,12 @@
                                 </div>
                                 <div>
                                     <a href="${navLink}" target="_blank" class="btn-route">Git ↗</a>
-                                    <button onclick="sil(${istasyon.id})" class="btn-red">Sil</button>
+                                    <button onclick="sil(${istasyon.id})" class="btn-red">Sil 🗑️</button>
                                 </div>
                             </div>`;
                         listeDiv.innerHTML += kart;
                     });
 
-                    // Haritayı sonuçlara odakla
                     if (markers.length > 0) {
                         var group = new L.featureGroup(markers);
                         map.fitBounds(group.getBounds().pad(0.1));
@@ -146,7 +144,7 @@
                 });
         }
 
-        // --- 1. YÖNTEM: GPS İLE KONUM EKLE ---
+        // --- 1. KONUM EKLE (GPS) ---
         async function konumEkle() {
             if (!confirm("Bulunduğunuz konum kaydedilsin mi?")) return;
             if (!navigator.geolocation) return alert("Konum açılamadı.");
@@ -157,7 +155,6 @@
                 const ad = prompt("İstasyon Adı:", "Yeni Yıkama");
                 if (!ad) return;
 
-                // Adres Bul
                 let il = "Bilinmiyor", ilce = "";
                 try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
@@ -170,7 +167,7 @@
             });
         }
 
-        // --- 2. YÖNTEM: ADRES GİREREK EKLE ---
+        // --- 2. ADRES İLE EKLE ---
         function formuGoster() { document.getElementById('adresFormu').style.display = 'block'; }
         function formuGizle() { document.getElementById('adresFormu').style.display = 'none'; }
 
@@ -182,7 +179,6 @@
 
             if (!ad || !il || !ilce) return alert("Lütfen Ad, İl ve İlçe giriniz.");
 
-            // Adresi Koordinata Çevir (OpenStreetMap API)
             const adresSorgu = `${mahalle}, ${ilce}, ${il}, Turkey`;
             
             try {
@@ -193,61 +189,4 @@
                     const lat = data[0].lat;
                     const lon = data[0].lon;
                     
-                    if(confirm(`Konum Bulundu: ${data[0].display_name}\nKaydedilsin mi?`)) {
-                        kaydet(ad, lat, lon, il, ilce);
-                        formuGizle();
-                        // Formu temizle
-                        document.getElementById('yeniAd').value = '';
-                        document.getElementById('yeniMahalle').value = '';
-                    }
-                } else {
-                    alert("Adres bulunamadı! Lütfen mahalle veya ilçe ismini kontrol edin.");
-                }
-            } catch (e) {
-                alert("Bağlantı hatası oluştu.");
-            }
-        }
-
-        // --- ORTAK KAYDETME FONKSİYONU ---
-        function kaydet(ad, lat, lon, il, ilce) {
-            fetch('/api/ekle', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ad, lat, lon, il, ilce })
-            }).then(() => {
-                alert("Kayıt Başarılı! ✅");
-                // Eklenen yeri görmek için o ili ara
-                ilInput.value = il; 
-                verileriGetir(il); 
-            });
-        }
-
-        // --- SİLME ---
-        function sil(id) {
-            const sifre = prompt("Silmek için yönetici şifresini girin:");
-            if (sifre === YONETICI_SIFRESI) {
-                fetch('/api/sil/' + id, { method: 'DELETE' }).then(() => {
-                    alert("Silindi.");
-                    verileriGetir(ilInput.value.trim());
-                });
-            } else if (sifre !== null) alert("Hatalı şifre!");
-        }
-
-        function filtrele() { 
-            const deger = ilInput.value.trim();
-            if(!deger) return alert("Lütfen bir il yazın.");
-            verileriGetir(deger); 
-        }
-        
-        function temizle() {
-            ilInput.value = '';
-            markers.forEach(m => map.removeLayer(m));
-            markers = [];
-            listeDiv.innerHTML = '<div class="loading">Harita temizlendi.</div>';
-            map.setView([39.0, 35.0], 6);
-        }
-
-        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-    </script>
-</body>
-</html>
+                    if(confirm(`Bulunan Konum: ${data[0].display_name}\n
