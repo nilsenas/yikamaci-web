@@ -6,15 +6,15 @@
     <title>Jetonlu Yıkama Bulucu</title>
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
-        body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; background-color: #f4f4f9; padding-bottom: 40px; }
+        body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; background-color: #f4f4f9; padding-bottom: 20px; }
         h1 { text-align: center; color: #333; margin: 10px 0; }
         
         /* HARİTA */
-        #map { height: 350px; width: 100%; border-radius: 12px; border: 2px solid #ddd; margin-bottom: 15px; z-index: 1; position: relative; }
+        #map { height: 350px; width: 100%; border-radius: 12px; border: 2px solid #ddd; margin-bottom: 15px; z-index: 1; }
 
         /* BUTON GRUBU */
         .action-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
@@ -43,7 +43,7 @@
         
         .loading { text-align: center; padding: 20px; color: #666; }
 
-        /* --- İMZA ALANI (FOOTER) --- */
+        /* --- İMZA ALANI CSS --- */
         footer {
             margin-top: 40px;
             padding-top: 20px;
@@ -55,6 +55,7 @@
             background-color: #eaeaea;
             border-radius: 10px;
             padding-bottom: 20px;
+            margin-bottom: 20px;
         }
         footer p { margin: 5px 0; }
         footer b { color: #333; font-weight: 800; }
@@ -101,26 +102,18 @@
         const listeDiv = document.getElementById('liste');
         const ilInput = document.getElementById('ilInput');
         var markers = [];
-        var map;
 
-        // HARİTAYI GÜVENLİ BAŞLATMA
-        try {
-            map = L.map('map').setView([39.0, 35.0], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
-        } catch (error) {
-            console.error("Harita yüklenemedi:", error);
-            document.getElementById('map').innerHTML = '<div style="padding:20px; text-align:center;">⚠️ Harita yükleniyor, lütfen sayfayı yenileyin.</div>';
-        }
+        // HARİTA AYARLARI (Eski Sağlam Kod)
+        var map = L.map('map').setView([39.0, 35.0], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
         // AÇILIŞ MESAJI
         listeDiv.innerHTML = '<div class="loading">🔍 Harita boş başlatıldı.<br>Konumları görmek için bir İl yazıp <b>"Ara"</b> butonuna basın.</div>';
 
         // --- VERİ ÇEKME VE LİSTELEME ---
         function verileriGetir(arananIl = '') {
-            if(map) {
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
-            }
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
             
             listeDiv.innerHTML = '<div class="loading">Aranıyor...</div>';
 
@@ -134,7 +127,7 @@
 
                     if (!veriler.data || veriler.data.length === 0) {
                         listeDiv.innerHTML = '<div class="loading">Bu bölgede kayıt bulunamadı.</div>';
-                        if(map) map.setView([39.0, 35.0], 6);
+                        map.setView([39.0, 35.0], 6);
                         return;
                     }
 
@@ -142,7 +135,7 @@
                         const navLink = `https://www.google.com/maps/search/?api=1&query=${istasyon.lat},${istasyon.lon}`;
 
                         // HARİTAYA PİN EKLE
-                        if (istasyon.lat && istasyon.lon && map) {
+                        if (istasyon.lat && istasyon.lon) {
                             var marker = L.marker([istasyon.lat, istasyon.lon])
                                 .addTo(map)
                                 .bindPopup(`
@@ -168,7 +161,7 @@
                         listeDiv.innerHTML += kart;
                     });
 
-                    if (markers.length > 0 && map) {
+                    if (markers.length > 0) {
                         var group = new L.featureGroup(markers);
                         map.fitBounds(group.getBounds().pad(0.1));
                     }
@@ -188,4 +181,91 @@
 
                 let il = "Bilinmiyor", ilce = "";
                 try {
-                    const res = await fetch(`
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+                    const data = await res.json();
+                    il = data.address.province || data.address.city || "Bilinmiyor";
+                    ilce = data.address.town || data.address.district || "";
+                } catch (e) {}
+
+                kaydet(ad, lat, lon, il, ilce);
+            });
+        }
+
+        // --- 2. ADRES İLE EKLE ---
+        function formuGoster() { document.getElementById('adresFormu').style.display = 'block'; }
+        function formuGizle() { document.getElementById('adresFormu').style.display = 'none'; }
+
+        async function adrestenKoordinatBul() {
+            const ad = document.getElementById('yeniAd').value;
+            const il = document.getElementById('yeniIl').value;
+            const ilce = document.getElementById('yeniIlce').value;
+            const mahalle = document.getElementById('yeniMahalle').value;
+
+            if (!ad || !il || !ilce) return alert("Lütfen Ad, İl ve İlçe giriniz.");
+
+            const adresSorgu = `${mahalle}, ${ilce}, ${il}, Turkey`;
+            
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(adresSorgu)}`);
+                const data = await res.json();
+
+                if (data.length > 0) {
+                    const lat = data[0].lat;
+                    const lon = data[0].lon;
+                    
+                    if(confirm(`Bulunan Konum: ${data[0].display_name}\nKaydedilsin mi?`)) {
+                        kaydet(ad, lat, lon, il, ilce);
+                        formuGizle();
+                        document.getElementById('yeniAd').value = '';
+                        document.getElementById('yeniMahalle').value = '';
+                    }
+                } else {
+                    alert("Adres bulunamadı! Lütfen kontrol edin.");
+                }
+            } catch (e) { alert("Hata oluştu."); }
+        }
+
+        function kaydet(ad, lat, lon, il, ilce) {
+            fetch('/api/ekle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ad, lat, lon, il, ilce })
+            }).then(() => {
+                alert("Kayıt Başarılı! ✅");
+                ilInput.value = il; 
+                verileriGetir(il); 
+            });
+        }
+
+        // --- SİLME FONKSİYONU (ŞİFRELİ) ---
+        function sil(id) {
+            const sifre = prompt("Silmek için yönetici şifresini girin:");
+            
+            if (sifre === YONETICI_SIFRESI) {
+                fetch('/api/sil/' + id, { method: 'DELETE' }).then(() => {
+                    alert("Kayıt silindi.");
+                    verileriGetir(ilInput.value.trim());
+                });
+            } else if (sifre !== null) {
+                alert("Hatalı şifre! Silme işlemi iptal edildi.");
+            }
+        }
+
+        function filtrele() { 
+            const deger = ilInput.value.trim();
+            if(!deger) return alert("Lütfen bir il yazın.");
+            verileriGetir(deger); 
+        }
+        
+        function temizle() {
+            ilInput.value = '';
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            listeDiv.innerHTML = '<div class="loading">Harita temizlendi.</div>';
+            map.setView([39.0, 35.0], 6);
+        }
+
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+    </script>
+</body>
+</html>
